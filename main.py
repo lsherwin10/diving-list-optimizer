@@ -1,13 +1,14 @@
-import mechanize
-import requests
 import re
-from bs4 import BeautifulSoup
-import pandas as pd
+
+import mechanize
 import numpy as np
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 
 import dd
 
-
+# Gets data from divemeets.com and returns 1m and 3m dive results
 def get_diver_data(name):
     br = mechanize.Browser()
 
@@ -36,6 +37,7 @@ def get_diver_data(name):
     return get_diver_stats(diver_link)
 
 
+# Parses the Dive Statistics table to get 1m and 3m lists
 def get_diver_stats(url):
     diver_req = requests.get(url)
     df = pd.read_html(diver_req.text, flavor="html5lib")[-1]
@@ -61,6 +63,7 @@ def get_diver_stats(url):
     df = df[cols]
 
     df.reset_index(drop=True, inplace=True)
+    df["Avg Score"] = df["Avg Score"].astype(float)
 
     # Separate 1m and 3m
     one_meter = df[df["Height"] == "1M"].reset_index(drop=True)
@@ -69,16 +72,54 @@ def get_diver_stats(url):
     return one_meter, three_meter
 
 
-def optimize_list(df):
-    # TODO: optimize list for 6 and 11 dives
-    dd_tables = dd.create_dd_tables()
-    pass
+# Takes in dives for a specific board and chooses the optimal list
+def optimize_list(df, height, champ=False):
+    # dd_tables = dd.create_dd_tables()
+
+    # Optimize for 11-dive list
+    if champ:
+        dd_vol_max = 0.0
+        if height == "1M":
+            dd_vol_max = 9.0
+        elif height == "3M":
+            dd_vol_max = 9.5
+        else:
+            raise Exception("Illegal height parameter specified")
+
+    # TODO: Optimize voluntaries using DDs
+
+    # Optimize for 6-dive list
+    else:
+        idx = []
+        remove_idx = []
+        for cat in range(1, 6):
+            cat_dives = df[df["Dive"].str.startswith(str(cat))]
+            dive_idx = cat_dives["Avg Score"].idxmax()
+            idx.append(dive_idx)
+            dive_num = df.iloc[dive_idx, 0]
+            remove_idx += list(
+                cat_dives.loc[cat_dives["Dive"] == dive_num].index.values
+            )
+
+        rem_dives = df.loc[~df.index.isin(remove_idx)]
+        idx.append(rem_dives["Avg Score"].idxmax())
+
+        return df.loc[idx].reset_index(drop=True)
+
+
+def run(name):
+    one_meter, three_meter = get_diver_data(name)
+
+    one_opt = optimize_list(one_meter, "1M")
+    three_opt = optimize_list(three_meter, "3M")
+
+    print(one_opt)
+    print(f"1M Total: {one_opt['Avg Score'].sum():.2f}")
+    print()
+    print(three_opt)
+    print(f"3M Total: {three_opt['Avg Score'].sum():.2f}")
 
 
 if __name__ == "__main__":
-    # name = input("Enter the diver's name: ")
-    name = "Logan Sherwin"
-    one_meter, three_meter = get_diver_data(name)
-
-    # one_opt = optimize_list(one_meter)
-    # three_opt = optimize_list(three_meter)
+    name = input("Enter the diver's name: ")
+    run(name)
